@@ -2370,16 +2370,19 @@ window.addEventListener('load', async () => {
 // ── AUTH ──────────────────────────────────────────────────────────────────────
 async function doLogin() {
   const pwd = document.getElementById('pwd-input').value;
-  // En mode distant, lire l'URL du serveur
+  // En mode distant, vérifier l'URL (auto-détectée ou saisie manuellement)
   if (!isLocal) {
-    const url = document.getElementById('api-url-input').value.replace(/\/+$/, '');
-    if (!url) {
+    const inputUrl = document.getElementById('api-url-input').value.replace(/\/+$/, '');
+    if (inputUrl) {
+      API = inputUrl;
+      localStorage.setItem('ddc-api-url', inputUrl);
+    }
+    if (!API) {
       document.getElementById('login-error').textContent = 'URL du serveur requise';
       document.getElementById('login-error').style.display = 'block';
+      document.getElementById('api-url-field').style.display = 'block';
       return;
     }
-    API = url;
-    localStorage.setItem('ddc-api-url', url);
   }
   try {
     const res = await fetch(`${API}/api/login`, {

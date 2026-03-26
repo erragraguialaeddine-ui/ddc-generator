@@ -52,21 +52,41 @@ else
     echo "ℹ Aucun template PPT requis pour le nouveau moteur (generation par code)"
 fi
 
-# 6. Lancer ngrok (optionnel)
+# 6. Lancer ngrok en background + publier l'URL
 echo ""
-echo "→ Pour exposer l'API sur internet (optionnel) :"
-echo "   ngrok http 8000"
-echo ""
+if command -v ngrok &> /dev/null; then
+    echo "→ Démarrage ngrok..."
+    ngrok http 8000 --log=false &
+    NGROK_PID=$!
+    sleep 4
+    NGROK_URL=$(curl -s http://127.0.0.1:4040/api/tunnels 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['tunnels'][0]['public_url'])" 2>/dev/null || echo "")
+    if [ -n "$NGROK_URL" ]; then
+        echo "✓ ngrok actif : $NGROK_URL"
+        # Mettre à jour config.json et pousser sur GitHub Pages
+        echo "{\"api_url\": \"$NGROK_URL\"}" > "$SCRIPT_DIR/docs/config.json"
+        cd "$SCRIPT_DIR"
+        git add docs/config.json && git commit -m "update ngrok url" --quiet && git push --quiet 2>/dev/null &
+        echo "✓ URL publiée sur GitHub Pages"
+    else
+        echo "⚠ ngrok démarré mais URL non récupérée"
+    fi
+else
+    echo "ℹ ngrok non installé — accès local uniquement"
+    echo "  Pour installer : brew install ngrok"
+fi
 
 # 7. Démarrer le backend
+echo ""
 echo "→ Démarrage du backend FastAPI..."
 echo ""
-echo "┌─────────────────────────────────────────┐"
-echo "│  Backend  : http://localhost:8000        │"
-echo "│  Frontend : ouvre index.html dans Chrome │"
-echo "│  Password : v4f2025 (modifiable dans     │"
-echo "│             main.py → PASSWORD)          │"
-echo "└─────────────────────────────────────────┘"
+echo "┌──────────────────────────────────────────────┐"
+echo "│  Backend  : http://localhost:8000             │"
+if [ -n "$NGROK_URL" ]; then
+echo "│  Public   : $NGROK_URL"
+echo "│  Site     : https://erragraguialaeddine-ui.github.io/ddc-generator/"
+fi
+echo "│  Password : v4f2025                          │"
+echo "└──────────────────────────────────────────────┘"
 echo ""
 
 cd "$SCRIPT_DIR/backend"

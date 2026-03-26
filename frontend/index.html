@@ -2326,21 +2326,41 @@ uD+8urxxn55pj8znk4BOFzhQBxXe0UV8nUqTqyc5u7fVnuRjGCUYqyCiiioKCiiigD//2Q==" alt="V
 </div>
 
 <script>
-// URL backend : localhost en dev, URL stockée en prod (ngrok)
+// URL backend : localhost en dev, auto-détection via config.json en prod
 const isLocal = (location.hostname === 'localhost' || location.hostname === '127.0.0.1');
-let API = isLocal ? 'http://localhost:8000' : (localStorage.getItem('ddc-api-url') || '');
+let API = isLocal ? 'http://localhost:8000' : '';
 let token = localStorage.getItem('ddc-token') || '';
 let selectedFile = null;
 let currentFilename = null;
 let loadingInterval = null;
 
-// ── BOOT ──────────────────────────────────────────────────────────────────────
-window.addEventListener('load', () => {
-  // Afficher le champ URL en mode distant
-  if (!isLocal) {
+async function loadApiUrl() {
+  if (isLocal) return;
+  try {
+    const res = await fetch('config.json?t=' + Date.now());
+    const cfg = await res.json();
+    if (cfg.api_url) {
+      API = cfg.api_url.replace(/\/+$/, '');
+      // Cacher le champ URL si auto-détecté
+      document.getElementById('api-url-field').style.display = 'none';
+    } else {
+      // Pas d'URL dans config → afficher le champ manuel
+      document.getElementById('api-url-field').style.display = 'block';
+    }
+  } catch {
     document.getElementById('api-url-field').style.display = 'block';
+  }
+}
+
+// ── BOOT ──────────────────────────────────────────────────────────────────────
+window.addEventListener('load', async () => {
+  await loadApiUrl();
+  if (!isLocal && !API) {
     const saved = localStorage.getItem('ddc-api-url');
-    if (saved) document.getElementById('api-url-input').value = saved;
+    if (saved) {
+      API = saved;
+      document.getElementById('api-url-input').value = saved;
+    }
   }
   if (token && API) {
     showApp();

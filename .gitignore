@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+outputs/*.pptx
+outputs/history.json
+.env
+*.pdf
+.DS_Store

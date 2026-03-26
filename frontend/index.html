@@ -2387,7 +2387,7 @@ async function doLogin() {
   try {
     const res = await fetch(`${API}/api/login`, {
       method:'POST',
-      headers:{'Content-Type':'application/json'},
+      headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'},
       body:JSON.stringify({password:pwd})
     });
     if (res.ok) {
@@ -2424,7 +2424,7 @@ function showApp() {
 // ── STATUS ────────────────────────────────────────────────────────────────────
 async function checkStatus() {
   try {
-    const res = await fetch(`${API}/api/status`);
+    const res = await fetch(`${API}/api/status`, {headers:{'ngrok-skip-browser-warning':'1'}});
     const d = await res.json();
     const dot = document.getElementById('status-dot');
     if (d.model_ready) {
@@ -2519,7 +2519,7 @@ async function generateDDC() {
   try {
     const res = await fetch(`${API}/api/generate`, {
       method:'POST',
-      headers:{'Authorization':`Bearer ${token}`},
+      headers:{'Authorization':`Bearer ${token}`,'ngrok-skip-browser-warning':'1'},
       body:form
     });
 
@@ -2598,7 +2598,7 @@ function showResult(data) {
 
 async function downloadFile(filename) {
   const res = await fetch(`${API}/api/download/${filename}`, {
-    headers:{'Authorization':`Bearer ${token}`}
+    headers:{'Authorization':`Bearer ${token}`, 'ngrok-skip-browser-warning':'1'}
   });
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
@@ -2706,7 +2706,7 @@ function populateFilters(items) {
 async function loadHistory() {
   try {
     const res = await fetch(`${API}/api/history`, {
-      headers:{'Authorization':`Bearer ${token}`}
+      headers:{'Authorization':`Bearer ${token}`,'ngrok-skip-browser-warning':'1'}
     });
     historyItems = await res.json();
     const el = document.getElementById('history-content');

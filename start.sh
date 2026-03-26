@@ -20,9 +20,12 @@ if ! command -v ollama &> /dev/null; then
 fi
 echo "✓ Ollama trouvé"
 
-# 2. Lancer Ollama si pas déjà actif
+# 2. Lancer Ollama si pas déjà actif (mode performance max)
+export OLLAMA_FLASH_ATTENTION=true
+export OLLAMA_KEEP_ALIVE=-1
+export OLLAMA_NUM_PARALLEL=2
 if ! curl -s http://localhost:11434/api/version > /dev/null 2>&1; then
-    echo "→ Démarrage Ollama..."
+    echo "→ Démarrage Ollama (mode turbo)..."
     ollama serve &
     sleep 3
 fi

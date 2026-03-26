@@ -1518,7 +1518,13 @@ def call_llm(messages, temp=0.1, json_mode=False):
     kwargs = {
         'model': MODEL,
         'messages': messages,
-        'options': {'temperature':temp,'num_ctx':8192},
+        'options': {
+            'temperature': temp,
+            'num_ctx': 2048,        # Réduit — un CV + JSON tient dans 2K
+            'num_predict': 1500,    # Cap la sortie — le JSON fait ~800 tokens
+            'num_gpu': 999,         # Force tout sur GPU (Metal)
+            'num_thread': 8,        # Max threads CPU pour les parties non-GPU
+        },
     }
     if json_mode:
         kwargs['format'] = 'json'
@@ -1847,18 +1853,26 @@ def merge_llm_outputs(primary, secondary, cv_text):
     merged['missions'] = merged_missions
     return merged
 
+def _extraction_looks_good(data):
+    """Vérifie si l'extraction est assez propre pour skipper la validation."""
+    if not isinstance(data, dict):
+        return False
+    missions = data.get('missions', [])
+    if not isinstance(missions, list) or len(missions) < 1:
+        return False
+    if not data.get('prenom'):
+        return False
+    # Au moins 1 mission avec entreprise + réalisations
+    good = sum(1 for m in missions if m.get('entreprise') and m.get('realisations'))
+    return good >= 1
+
 def process_cv(cv_text, debug=False):
     raw1 = call_llm([{'role':'system','content':PROMPT_EXTRACT},{'role':'user','content':f'CV:\n\n{cv_text}'}], temp=0.0, json_mode=True)
     parsed1 = parse_json(raw1, repair=True)
     data = parsed1
     raw2 = None
     d2 = None
-    try:
-        raw2 = call_llm([{'role':'user','content':PROMPT_VALID.format(cv_text=cv_text, json_data=json.dumps(data,ensure_ascii=False))}], temp=0.0, json_mode=True)
-        d2 = parse_json(raw2, repair=True)
-        if isinstance(d2.get('missions'),list) and d2.get('prenom'):
-            data = merge_llm_outputs(data, d2, cv_text)
-    except: pass
+    # Validation skippée pour la vitesse — clean() + grounding assurent la qualité
     data = merge_recovered_missions(data, cv_text)
     cleaned = clean(data, cv_text)
     if not debug:

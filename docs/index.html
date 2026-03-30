@@ -176,6 +176,80 @@ nav { display:flex; gap:8px; align-items:center; }
   margin-top:12px; display:none;
 }
 
+/* ── MAINTENANCE ── */
+#maintenance-screen {
+  display:none; flex-direction:column; align-items:center; justify-content:center;
+  min-height:100vh; padding:24px;
+}
+
+.maintenance-card {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(248,113,113,0.25);
+  border-radius:24px;
+  padding:56px 48px;
+  width:100%; max-width:440px;
+  backdrop-filter:blur(20px);
+  text-align:center;
+  animation: slide-up 0.4s ease;
+}
+
+.maintenance-icon {
+  width:72px; height:72px;
+  background: rgba(248,113,113,0.12);
+  border: 1px solid rgba(248,113,113,0.3);
+  border-radius:50%;
+  display:flex; align-items:center; justify-content:center;
+  margin:0 auto 28px;
+  font-size:32px;
+}
+
+.maintenance-title {
+  font-family:'Inter',sans-serif;
+  font-size:22px; font-weight:700;
+  color:#f87171;
+  margin-bottom:12px;
+  line-height:1.3;
+}
+
+.maintenance-sub {
+  color:var(--gray); font-size:14px;
+  line-height:1.6; margin-bottom:32px;
+}
+
+.maintenance-contact {
+  display:inline-flex; align-items:center; gap:8px;
+  padding:12px 24px;
+  background: rgba(8,66,140,0.3);
+  border: 1px solid var(--border);
+  border-radius:12px;
+  color:var(--cyan); font-size:14px; font-weight:500;
+  text-decoration:none;
+}
+
+.maintenance-badge {
+  display:inline-flex; align-items:center; gap:6px;
+  padding:4px 12px;
+  background: rgba(248,113,113,0.1);
+  border: 1px solid rgba(248,113,113,0.2);
+  border-radius:20px;
+  color:#f87171; font-size:11px; font-weight:600;
+  text-transform:uppercase; letter-spacing:1px;
+  margin-bottom:20px;
+}
+
+.maintenance-badge::before {
+  content:'';
+  width:6px; height:6px;
+  background:#f87171;
+  border-radius:50%;
+  animation: pulse-dot 1.5s infinite;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity:1; transform:scale(1); }
+  50% { opacity:0.4; transform:scale(0.8); }
+}
+
 /* ── MAIN APP ── */
 #main-app { display:none; }
 
@@ -1385,6 +1459,23 @@ uD+8urxxn55pj8znk4BOFzhQBxXe0UV8nUqTqyc5u7fVnuRjGCUYqyCiiioKCiiigD//2Q==" alt="V
   </div>
 </div>
 
+<!-- MAINTENANCE -->
+<div id="maintenance-screen">
+  <div class="maintenance-card">
+    <div class="maintenance-icon">🔧</div>
+    <div class="maintenance-badge">Hors ligne</div>
+    <div class="maintenance-title">Serveur en maintenance ou OFF</div>
+    <div class="maintenance-sub">
+      Le service est temporairement indisponible.<br>
+      Veuillez réessayer dans quelques instants.
+    </div>
+    <div class="maintenance-contact">
+      <span>✉</span>
+      Contactez <strong style="color:var(--white);margin:0 4px;">Alae</strong> pour plus d'informations
+    </div>
+  </div>
+</div>
+
 <!-- MAIN APP -->
 <div id="main-app">
   <header>
@@ -2352,6 +2443,27 @@ async function loadApiUrl() {
   }
 }
 
+// ── SERVER HEALTH CHECK ───────────────────────────────────────────────────────
+async function checkServerHealth() {
+  if (!API) return false;
+  try {
+    const res = await fetch(`${API}/api/health`, {
+      method: 'GET',
+      headers: { 'ngrok-skip-browser-warning': '1' },
+      signal: AbortSignal.timeout(5000)
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+function showMaintenance() {
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('main-app').style.display = 'none';
+  document.getElementById('maintenance-screen').style.display = 'flex';
+}
+
 // ── BOOT ──────────────────────────────────────────────────────────────────────
 window.addEventListener('load', async () => {
   await loadApiUrl();
@@ -2360,6 +2472,14 @@ window.addEventListener('load', async () => {
     if (saved) {
       API = saved;
       document.getElementById('api-url-input').value = saved;
+    }
+  }
+  // Vérifier si le serveur est en ligne
+  if (API) {
+    const online = await checkServerHealth();
+    if (!online) {
+      showMaintenance();
+      return;
     }
   }
   if (token && API) {

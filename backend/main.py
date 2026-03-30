@@ -19,7 +19,7 @@ except ImportError:
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
 PASSWORD      = os.getenv("DDC_PASSWORD", "v4f2025")
-MODEL         = os.getenv("OLLAMA_MODEL", "mistral-nemo")
+MODEL         = os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
 OLLAMA_HOST   = os.getenv("OLLAMA_HOST",  "http://localhost:11434")
 TEMPLATE_PATH = Path(__file__).parent.parent / "TEMPLATE.pptx"
 OUTPUT_DIR    = Path(__file__).parent.parent / "outputs"
@@ -74,21 +74,26 @@ TEMPLATE_MISSION_GAP = 120000
 SLIDE_CONTENT_LIMIT = 9694442
 MAX_MISSIONS_PER_SLIDE = 3
 MAX_MISSIONS_TOTAL = 24
-MAX_REALISATIONS_PER_MISSION = 5
+MAX_REALISATIONS_PER_MISSION = 7
 REALISATION_MAX_WORDS = 18
 REALISATION_MAX_CHARS = 140
 THREE_MISSION_MAX_FILL = 0.88
 TWO_MISSION_TARGET_FILL = 0.84
+# Polices/tailles calées sur DDC VARINDER de référence:
+#   Titres missions: Montserrat 15pt (1500), bold, bleu
+#   Bullets missions: thème (Montserrat) 11pt (1100), gris
+#   Sidebar labels: thème 18pt, blanc, bold
+#   Sidebar bullets: thème 13pt, blanc
 LAYOUT_PROFILES = [
     {
         'name': 'normal',
-        'bullet_h': 255000,
-        'bullet_overhead': 65000,
+        'bullet_h': 175000,
+        'bullet_overhead': 50000,
         'group_h': 323165,
         'title_line_h': 175000,
         'title_char_limit': 60,
-        'bullet_char_limit': 86,
-        'bullet_font_sz': 1600,
+        'bullet_char_limit': 110,
+        'bullet_font_sz': 1100,
         'bullet_line_spc': 108000,
         'bullet_spc_aft': 0,
         'title_font_sz': 1500,
@@ -97,13 +102,13 @@ LAYOUT_PROFILES = [
     },
     {
         'name': 'compact',
-        'bullet_h': 235000,
-        'bullet_overhead': 50000,
+        'bullet_h': 160000,
+        'bullet_overhead': 40000,
         'group_h': 305000,
         'title_line_h': 160000,
         'title_char_limit': 66,
-        'bullet_char_limit': 96,
-        'bullet_font_sz': 1500,
+        'bullet_char_limit': 120,
+        'bullet_font_sz': 1050,
         'bullet_line_spc': 104000,
         'bullet_spc_aft': 0,
         'title_font_sz': 1425,
@@ -112,13 +117,13 @@ LAYOUT_PROFILES = [
     },
     {
         'name': 'dense',
-        'bullet_h': 215000,
-        'bullet_overhead': 40000,
+        'bullet_h': 145000,
+        'bullet_overhead': 35000,
         'group_h': 292000,
         'title_line_h': 145000,
         'title_char_limit': 72,
-        'bullet_char_limit': 108,
-        'bullet_font_sz': 1400,
+        'bullet_char_limit': 130,
+        'bullet_font_sz': 1000,
         'bullet_line_spc': 100000,
         'bullet_spc_aft': 0,
         'title_font_sz': 1350,
@@ -127,13 +132,13 @@ LAYOUT_PROFILES = [
     },
     {
         'name': 'airy',
-        'bullet_h': 205000,
-        'bullet_overhead': 35000,
+        'bullet_h': 135000,
+        'bullet_overhead': 30000,
         'group_h': 276000,
         'title_line_h': 135000,
         'title_char_limit': 78,
-        'bullet_char_limit': 118,
-        'bullet_font_sz': 1350,
+        'bullet_char_limit': 140,
+        'bullet_font_sz': 950,
         'bullet_line_spc': 98000,
         'bullet_spc_aft': 0,
         'title_font_sz': 1275,
@@ -792,25 +797,21 @@ def chunk_bottom(chunk, profile=None):
     return current_bottom
 
 def chunk_gap(chunk, profile=None):
-    """Gap entre missions. Pour 2 missions, gap plus généreux pour réduire le blanc en bas."""
+    """Gap entre missions. Distribue le blanc libre entre les missions pour
+    répartir le contenu uniformément sur toute la hauteur de la slide."""
     profile = profile or LAYOUT_PROFILES[0]
     if len(chunk) <= 1:
         return 90000
     base_gap = TEMPLATE_MISSION_GAP
-    if profile['name'] == 'dense':
-        base_gap = 70000
-    elif profile['name'] == 'compact':
-        base_gap = 85000
-    elif profile['name'] == 'airy':
-        base_gap = 95000
-    if len(chunk) == 2:
-        # Espace libre sous le contenu
-        content_h = chunk_bottom(chunk, profile) - GRP1_Y
-        available_h = SLIDE_CONTENT_LIMIT - GRP1_Y
-        free = max(available_h - content_h, 0)
-        # Absorber ~20% du blanc dans le gap — le reste en bas
-        extra = min(free // 5, 400000)
-        return base_gap + extra
+    # Calculer l'espace libre sous le contenu
+    content_h = chunk_bottom(chunk, profile) - GRP1_Y
+    available_h = SLIDE_CONTENT_LIMIT - GRP1_Y
+    free = max(available_h - content_h, 0)
+    n_gaps = len(chunk) - 1
+    if free > 0 and n_gaps > 0:
+        # Distribuer 40% du blanc libre entre les gaps, plafonné à 800000 EMU (~0.87")
+        extra_per_gap = min(free * 2 // (5 * n_gaps), 800000)
+        return base_gap + extra_per_gap
     return base_gap
 
 def chunk_shift(chunk, profile=None):
@@ -1291,41 +1292,29 @@ def process_slide(xml, data, slide_n, total, chunk, profile=None):
 
 # ── DÉCOUPAGE ADAPTATIF ───────────────────────────────────────────────────────
 def best_profile_for_chunk(chunk):
+    """Trouve le profil le plus large (normal > compact > dense > airy) qui tient."""
     if len(chunk) > MAX_MISSIONS_PER_SLIDE:
         return None
-    fitting_profiles = [
-        profile for profile in LAYOUT_PROFILES
-        if chunk_bottom(chunk, profile) <= SLIDE_CONTENT_LIMIT
-    ]
-    if not fitting_profiles:
-        return None
-    if len(chunk) >= 3:
-        comfortable = [
-            profile for profile in fitting_profiles
-            if (chunk_bottom(chunk, profile) / SLIDE_CONTENT_LIMIT) <= THREE_MISSION_MAX_FILL
-        ]
-        if comfortable:
-            return comfortable[0]
-        return None
-    return fitting_profiles[0]
+    for profile in LAYOUT_PROFILES:
+        if chunk_bottom(chunk, profile) <= SLIDE_CONTENT_LIMIT:
+            return profile
+    return None
 
-def compact_underfilled_slide(chunk, profile):
+def best_fill_profile(chunk):
+    """Choisit le profil qui REMPLIT LE PLUS la slide sans déborder.
+    Pour les slides sous-remplies, on prend le profil le plus gros (normal)
+    afin d'occuper un max d'espace vertical."""
     if not chunk:
-        return profile
-    fill = chunk_bottom(chunk, profile) / SLIDE_CONTENT_LIMIT
-    if fill >= 0.8:
-        return profile
-    if len(chunk) == 1:
-        return profile
-    # Pour les slides sous-remplies, on préfère le profil qui occupe le plus
-    # d'espace vertical sans déborder, au lieu d'alléger encore la slide.
+        return LAYOUT_PROFILES[0]
     fitting = [
-        candidate for candidate in LAYOUT_PROFILES
-        if chunk_bottom(chunk, candidate) <= SLIDE_CONTENT_LIMIT
+        p for p in LAYOUT_PROFILES
+        if chunk_bottom(chunk, p) <= SLIDE_CONTENT_LIMIT
     ]
     if not fitting:
-        return profile
-    return max(fitting, key=lambda candidate: chunk_bottom(chunk, candidate))
+        return LAYOUT_PROFILES[-1]
+    # Profil qui remplit le plus = le premier dans la liste (normal > compact > ...)
+    # Car normal a les plus gros bullet_h et group_h
+    return fitting[0]
 
 def plan_slides(missions):
     """Cherche la meilleure répartition globale des missions et le profil de chaque slide."""
@@ -1370,7 +1359,7 @@ def plan_slides(missions):
             profile = best_profile_for_chunk(chunk)
             if profile is None:
                 continue
-            profile = compact_underfilled_slide(chunk, profile)
+            profile = best_fill_profile(chunk)
             suffix = solve(end)
             if suffix is None:
                 continue
@@ -1468,7 +1457,7 @@ RÈGLES IMPÉRATIVES:
 - Les "competences_cles", "outils" et "aptitudes" doivent être des éléments réellement visibles dans le CV, pas des extrapolations.
 - Les "realisations" doivent garder le wording du CV autant que possible. Raccourcis seulement si c'est vraiment nécessaire pour l'affichage.
 - Garde toutes les expériences visibles et significatives du CV, en chronologie inversée.
-- Max 24 missions, max 5 réalisations par mission."""
+- Max 24 missions, max 7 réalisations par mission."""
 
 PROMPT_VALID = """Tu reçois un CV source et un JSON extrait. Corrige le JSON en restant strictement fidèle au CV.
 
@@ -1476,7 +1465,7 @@ RÈGLES:
 - Supprime toute information absente, douteuse ou reformulée de manière trop libre.
 - Garde uniquement ce qui est ancré dans le CV.
 - Préfère une valeur vide plutôt qu'une invention.
-- Respecte le format PPT: titre court, max 4 compétences, max 3 formations, max 5 outils, max 4 aptitudes, max 24 missions, max 5 réalisations par mission.
+- Respecte le format PPT: titre court, max 4 compétences, max 3 formations, max 5 outils, max 4 aptitudes, max 24 missions, max 7 réalisations par mission.
 - Missions en chronologie inversée.
 
 Retourne UNIQUEMENT le JSON corrigé.
@@ -1520,8 +1509,8 @@ def call_llm(messages, temp=0.1, json_mode=False):
         'messages': messages,
         'options': {
             'temperature': temp,
-            'num_ctx': 2048,        # Réduit — un CV + JSON tient dans 2K
-            'num_predict': 1500,    # Cap la sortie — le JSON fait ~800 tokens
+            'num_ctx': 8192,        # CVs longs (5+ pages) ont besoin de 6-8k tokens
+            'num_predict': 2500,    # 9 missions × ~200 tok = ~1800 + overhead
             'num_gpu': 999,         # Force tout sur GPU (Metal)
             'num_thread': 8,        # Max threads CPU pour les parties non-GPU
         },
@@ -1866,10 +1855,87 @@ def _extraction_looks_good(data):
     good = sum(1 for m in missions if m.get('entreprise') and m.get('realisations'))
     return good >= 1
 
+def normalize_llm_schema(data):
+    """Mappe les clés alternatives vers le schéma attendu.
+    Certains modèles (qwen, mistral) inventent leur propre schéma JSON.
+    On récupère les données quel que soit le format retourné."""
+    if not isinstance(data, dict):
+        return data
+    # Mapping clés alternatives → clés attendues
+    KEY_MAP = {
+        'name': 'prenom', 'first_name': 'prenom', 'firstname': 'prenom',
+        'last_name': 'nom', 'lastname': 'nom', 'surname': 'nom',
+        'title': 'titre', 'job_title': 'titre', 'poste_actuel': 'titre',
+        'years_experience': 'annees_xp', 'experience_years': 'annees_xp',
+        'skills': 'competences_cles', 'key_skills': 'competences_cles',
+        'competences': 'competences_cles', 'core_skills': 'competences_cles',
+        'tools': 'outils', 'software': 'outils', 'technologies': 'outils',
+        'soft_skills': 'aptitudes', 'qualities': 'aptitudes', 'savoir_etre': 'aptitudes',
+        'education': 'formation', 'formations': 'formation', 'diplomes': 'formation',
+        'experience': 'missions', 'experiences': 'missions', 'work_experience': 'missions',
+        'professional_experience': 'missions', 'parcours': 'missions',
+    }
+    out = {}
+    for key, val in data.items():
+        target = KEY_MAP.get(key.lower().strip(), key)
+        # Ne pas écraser une valeur déjà remplie par une valeur vide
+        if target in out and out[target] and not val:
+            continue
+        # Préférer la valeur la plus riche
+        if target in out and out[target] and val:
+            existing = out[target]
+            if isinstance(existing, list) and isinstance(val, list):
+                if len(val) > len(existing):
+                    out[target] = val
+                continue
+            if isinstance(existing, str) and isinstance(val, str):
+                if len(val) > len(existing):
+                    out[target] = val
+                continue
+        out[target] = val
+    # Normaliser les missions si elles ont un format alternatif
+    missions = out.get('missions', [])
+    if isinstance(missions, list) and missions:
+        normalized_missions = []
+        for m in missions:
+            if not isinstance(m, dict):
+                continue
+            nm = {}
+            # Mapping clés mission
+            m_map = {
+                'company': 'entreprise', 'societe': 'entreprise', 'organisation': 'entreprise',
+                'employer': 'entreprise', 'client': 'entreprise',
+                'position': 'poste', 'role': 'poste', 'job_title': 'poste', 'titre': 'poste',
+                'duration': 'duree', 'period': 'duree', 'dates': 'duree', 'date': 'duree',
+                'achievements': 'realisations', 'tasks': 'realisations',
+                'responsibilities': 'realisations', 'description': 'realisations',
+                'bullets': 'realisations', 'details': 'realisations',
+            }
+            for mk, mv in m.items():
+                target_mk = m_map.get(mk.lower().strip(), mk)
+                nm[target_mk] = mv
+            # Si description est une string, la convertir en liste
+            if isinstance(nm.get('realisations'), str):
+                nm['realisations'] = [s.strip() for s in nm['realisations'].split('\n') if s.strip()]
+            normalized_missions.append(nm)
+        out['missions'] = normalized_missions
+    # Si formation est une liste de dicts, extraire les strings
+    formation = out.get('formation', [])
+    if isinstance(formation, list) and formation and isinstance(formation[0], dict):
+        out['formation'] = [
+            normalize_text(' - '.join(filter(None, [
+                f.get('degree', f.get('diplome', f.get('titre', ''))),
+                f.get('institution', f.get('ecole', f.get('school', ''))),
+                f.get('year', f.get('annee', ''))
+            ])))
+            for f in formation if isinstance(f, dict)
+        ]
+    return out
+
 def process_cv(cv_text, debug=False):
     raw1 = call_llm([{'role':'system','content':PROMPT_EXTRACT},{'role':'user','content':f'CV:\n\n{cv_text}'}], temp=0.0, json_mode=True)
     parsed1 = parse_json(raw1, repair=True)
-    data = parsed1
+    data = normalize_llm_schema(parsed1)
     raw2 = None
     d2 = None
     # Validation skippée pour la vitesse — clean() + grounding assurent la qualité
@@ -1948,6 +2014,10 @@ def download(filename: str, request: Request):
 def get_history(request: Request):
     check_auth(request)
     return history
+
+@app.get("/api/health")
+def health():
+    return {"status": "ok"}
 
 @app.get("/api/status")
 def status():
